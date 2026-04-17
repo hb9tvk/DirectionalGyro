@@ -54,16 +54,38 @@ https://github.com/ElectronDon66/Directional-Gyro
 
 ### Rotary Encoder (Quadrature)
 
+A standard bare quadrature encoder has **3 rotation pins** (GND, A, B) and **2 button pins** (SW, SW-GND).
+
 | Encoder Pin | ESP32-S3 GPIO | Notes |
 |-------------|---------------|-------|
-| VCC         | 3V3           | 3.3 V power |
-| GND         | GND           | Ground |
+| GND (middle / C) | GND    | Common — encoder shorts A/B to this on each detent |
 | A (CLK)     | GPIO 6        | Quadrature channel A |
 | B (DT)      | GPIO 7        | Quadrature channel B |
+| VCC / 3V3   | —             | **Leave unconnected** — not needed |
 | SW (button) | —             | Not used in firmware |
+| SW GND      | —             | Not used in firmware |
+
+> **No external pull-up resistors needed.** The firmware configures GPIO 6 and GPIO 7 as
+> `INPUT_PULLUP`, so the lines are held at 3.3 V internally. The encoder's common (middle) pin
+> must be connected to GND — when the shaft turns, it briefly shorts A or B to GND,
+> which the microcontroller detects as a falling edge.
+
+> The middle pin is almost always the **GND / common**. On modules with PCB labels,
+> look for `CLK` → A, `DT` → B, and the remaining signal pin (`–` or `C`) → GND.
+
+```
+Encoder viewed from shaft side:
+
+    ┌────────────────┐
+    │   shaft/knob   │
+    └────────────────┘
+         │    │    │
+         A   GND   B
+       GPIO6  GND  GPIO7
+```
 
 > The encoder sets a heading offset (0.5° per detent).  
-> Turning it clockwise increases the displayed heading; counter-clockwise decreases it.  
+> Turning clockwise increases the displayed heading; counter-clockwise decreases it.  
 > The scaling factor can be adjusted in `src/main.cpp` — look for `encoderCount * 0.5f`.
 
 ---
@@ -82,8 +104,8 @@ GPIO 9  ──── BNO085 SCL
 GPIO 10 ──── GC9A01 CS
 GPIO 11 ──── GC9A01 MOSI
 GPIO 12 ──── GC9A01 SCK
-3V3     ──── GC9A01 VCC, GC9A01 BL, BNO085 VIN, Encoder VCC
-GND     ──── GC9A01 GND, BNO085 GND, BNO085 AD0, Encoder GND
+3V3     ──── GC9A01 VCC, GC9A01 BL, BNO085 VIN
+GND     ──── GC9A01 GND, BNO085 GND, BNO085 AD0, Encoder GND (middle pin)
 ```
 
 ---
@@ -94,15 +116,14 @@ GND     ──── GC9A01 GND, BNO085 GND, BNO085 AD0, Encoder GND
 
 1. Open the project folder in VS Code with the PlatformIO extension installed.
 2. PlatformIO will automatically download all library dependencies on first build:
-   - [TFT_eSPI](https://github.com/Bodmer/TFT_eSPI) — display driver
+   - [LovyanGFX](https://github.com/lovyan03/LovyanGFX) — display driver (ESP32-S3 native)
    - [Adafruit BNO08x](https://github.com/adafruit/Adafruit_BNO08x) — IMU driver
    - [Adafruit BusIO](https://github.com/adafruit/Adafruit_BusIO) — I2C/SPI abstraction
 3. Build and upload with the PlatformIO toolbar or `pio run -t upload`.
 
-### TFT_eSPI pin configuration
+### Display pin configuration
 
-Display pins are configured via `-D` build flags in `platformio.ini` (no manual library editing needed).  
-To change a pin, update the corresponding `-DTFT_*` line in `platformio.ini`.
+Display pins are configured directly in the `LGFX` class at the top of `src/main.cpp` — no build flags or separate header needed. To change a pin, edit the `cfg.pin_*` lines in the constructor.
 
 ### Adjusting the heading offset scaling
 
