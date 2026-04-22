@@ -45,12 +45,12 @@ https://github.com/ElectronDon66/Directional-Gyro
 | GND        | GND           | Ground |
 | SDA        | GPIO 8        | I2C data |
 | SCL        | GPIO 9        | I2C clock |
-| AD0 / ADDR | GND           | Selects I2C address 0x4A (leave floating for 0x4B) |
+| AD0 / ADDR | —             | Leave floating — selects I2C address 0x4B |
 | INT        | —             | Not used |
 | RST        | —             | Not used |
 
-> **I2C address:** Ground the AD0 pin for address `0x4A` (default in firmware).  
-> If your module uses `0x4B`, change `bno.begin_I2C()` to `bno.begin_I2C(0x4B)` in `src/main.cpp`.
+> **I2C address:** The firmware uses address `0x4B` (AD0 left unconnected / floating).  
+> If your module has AD0 grounded it uses `0x4A` — change `bno.begin_I2C(0x4B)` to `bno.begin_I2C(0x4A)` in `src/main.cpp`.
 
 ### Rotary Encoder (Quadrature)
 
@@ -62,11 +62,11 @@ A standard bare quadrature encoder has **3 rotation pins** (GND, A, B) and **2 b
 | A (CLK)     | GPIO 6        | Quadrature channel A |
 | B (DT)      | GPIO 7        | Quadrature channel B |
 | VCC / 3V3   | —             | **Leave unconnected** — not needed |
-| SW (button) | —             | Not used in firmware |
-| SW GND      | —             | Not used in firmware |
+| SW (button) | GPIO 3        | Push button — single click = sleep, double click = default heading |
+| SW GND      | GND           | Button common |
 
-> **No external pull-up resistors needed.** The firmware configures GPIO 6 and GPIO 7 as
-> `INPUT_PULLUP`, so the lines are held at 3.3 V internally. The encoder's common (middle) pin
+> **No external pull-up resistors needed.** The firmware configures GPIO 3, 6 and 7 as
+> `INPUT_PULLUP`, so all lines are held at 3.3 V internally. The encoder's common (middle) pin
 > must be connected to GND — when the shaft turns, it briefly shorts A or B to GND,
 > which the microcontroller detects as a falling edge.
 
@@ -82,11 +82,15 @@ Encoder viewed from shaft side:
          │    │    │
          A   GND   B
        GPIO6  GND  GPIO7
+
+Button pins (separate pair):
+    SW ──── GPIO 3
+    SW-GND ──── GND
 ```
 
 > The encoder sets a heading offset (0.5° per detent).  
 > Turning clockwise increases the displayed heading; counter-clockwise decreases it.  
-> The scaling factor can be adjusted in `src/main.cpp` — look for `encoderCount * 0.5f`.
+> The scaling factor can be adjusted in `src/main.cpp` — look for `HEADING_SCALE`.
 
 ---
 
@@ -95,6 +99,7 @@ Encoder viewed from shaft side:
 ```
 ESP32-S3
 ─────────────────────────────────────────────
+GPIO 3  ──── Encoder SW (button)
 GPIO 4  ──── GC9A01 DC
 GPIO 5  ──── GC9A01 RST
 GPIO 6  ──── Encoder A
@@ -105,7 +110,7 @@ GPIO 10 ──── GC9A01 CS
 GPIO 11 ──── GC9A01 MOSI
 GPIO 12 ──── GC9A01 SCK
 3V3     ──── GC9A01 VCC, GC9A01 BL, BNO085 VIN
-GND     ──── GC9A01 GND, BNO085 GND, BNO085 AD0, Encoder GND (middle pin)
+GND     ──── GC9A01 GND, BNO085 GND, Encoder GND (middle pin), Encoder SW-GND
 ```
 
 ---
@@ -127,23 +132,43 @@ Display pins are configured directly in the `LGFX` class at the top of `src/main
 
 ### Adjusting the heading offset scaling
 
-In `src/main.cpp`, the line:
+In `src/main.cpp`, change the `HEADING_SCALE` define:
 
 ```cpp
-float headingOffset = encoderCount * 0.5f;
+#define HEADING_SCALE  0.5f   // degrees per encoder detent
 ```
 
-maps each encoder detent to 0.5°. Change the multiplier if your encoder has a different detent resolution.
+The default of 0.5° per detent suits most 20-detent encoders. Increase it for coarser adjustment.
 
 ---
 
 ## How it works
 
 1. The BNO085 runs in **Game Rotation Vector** mode at 200 Hz — fusing gyro and accelerometer only (no compass).
-2. The quaternion output is converted to a yaw angle (heading).
-3. The rotary encoder adds an offset so you can synchronize the indicator to a known heading at startup.
-4. A 240×240 sprite is rendered each time the heading changes by more than 0.2° and pushed to the display.
-5. The aircraft symbol is fixed at the center; the compass card rotates behind it.
+2. The quaternion is converted to yaw. The sign is inverted to match aviation convention (clockwise turn = increasing heading).
+3. The rotary encoder adds an offset to synchronize the indicator to a known heading.
+4. A 240×240 sprite is rendered each time the heading changes by more than 0.2° and pushed to the display in one DMA transfer.
+5. The aircraft symbol is fixed at the centre; the compass card rotates behind it so the current heading is always at the top.
+
+## Power and button behaviour
+
+| Action | Effect |
+|--------|--------|
+| **Single click** | Saves current heading to flash, shows "OFF", enters deep sleep |
+| **Deep sleep** | All peripherals off; wakes instantly when button is pressed again |
+| **Double click** | Loads the `DEFAULT_HEADING` value defined in `src/main.cpp` |
+| **Power on / wake** | Restores last saved heading automatically |
+| **First boot** | Uses `DEFAULT_HEADING` (default: 0° / North) |
+
+WiFi and Bluetooth are disabled at startup to reduce current consumption.
+
+### Changing the default heading
+
+Edit the `DEFAULT_HEADING` define near the top of `src/main.cpp`:
+
+```cpp
+#define DEFAULT_HEADING  270.0f   // e.g. West
+```
 
 ---
 
